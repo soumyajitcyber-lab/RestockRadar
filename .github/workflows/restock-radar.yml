@@ -1,0 +1,49 @@
+
+name: Restock Radar
+
+on:
+  schedule:
+    - cron: "*/7 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: restock-radar
+  cancel-in-progress: false
+
+jobs:
+  check-stock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependency
+        run: python -m pip install requests
+
+      - name: Restore previous stock state
+        uses: actions/cache@v4
+        with:
+          path: .state/
+          key: restock-state-${{ github.run_id }}
+          restore-keys: |
+            restock-state-
+
+      - name: Check listing and send alert if needed
+        env:
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          ALERT_EMAIL_TO: ${{ secrets.ALERT_EMAIL_TO }}
+          ALERT_EMAIL_FROM: ${{ secrets.ALERT_EMAIL_FROM }}
+        run: python restock_radar.py
