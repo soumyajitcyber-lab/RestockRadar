@@ -14,6 +14,7 @@ URL = (
     "social-science-2026-27/p/itmac61d4e4f7647"
     "?pid=9788168888883"
 )
+
 PRODUCT_ID = "9788168888883"
 LISTING_ID = "LSTBOK9788168888883HDARHM"
 STATE = Path(".state/status.json")
@@ -26,36 +27,54 @@ def check_stock():
             headers={"User-Agent": "RestockRadar/1.0"},
             timeout=20,
         )
-        if response.status_code != 200:
-            return "UNKNOWN"
-
-        html = response.text
-        if PRODUCT_ID not in html or LISTING_ID not in html:
-            return "UNKNOWN"
-
-        position = html.find(LISTING_ID)
-        section = html[position:position + 5000]
-
-        match = re.search(
-            r'"availabilityStatus"\s*:\s*"([^"]+)"',
-            section,
-        )
-        if not match:
-            return "UNKNOWN"
-
-        status = match.group(1).upper()
-        return status if status in {
-            "IN_STOCK", "OUT_OF_STOCK"
-        } else "UNKNOWN"
-
-    except requests.RequestException:
+    except requests.RequestException as error:
+        print("Network error:", type(error).__name__)
         return "UNKNOWN"
+
+    print("HTTP status:", response.status_code)
+
+    if response.status_code != 200:
+        print("The website did not return a usable page.")
+        return "UNKNOWN"
+
+    html = response.text
+    print("Page length:", len(html))
+    print("Product ID found:", PRODUCT_ID in html)
+    print("Listing ID found:", LISTING_ID in html)
+
+    if PRODUCT_ID not in html or LISTING_ID not in html:
+        print("The expected product listing could not be verified.")
+        return "UNKNOWN"
+
+    position = html.find(LISTING_ID)
+    section = html[position:position + 5000]
+
+    match = re.search(
+        r'"availabilityStatus"\s*:\s*"([^"]+)"',
+        section,
+    )
+
+    if not match:
+        print("Stock-status field not found beside the listing.")
+        return "UNKNOWN"
+
+    status = match.group(1).upper()
+    print("Raw listing status:", status)
+
+    if status not in {"IN_STOCK", "OUT_OF_STOCK"}:
+        print("Unrecognized stock status.")
+        return "UNKNOWN"
+
+    return status
 
 
 def send_email():
     message = EmailMessage()
     message["Subject"] = "Restock Radar: Check your sample papers"
-    message["From"] = os.environ.get("ALERT_EMAIL_FROM") or os.environ["SMTP_USERNAME"]
+    message["From"] = (
+        os.environ.get("ALERT_EMAIL_FROM")
+        or os.environ["SMTP_USERNAME"]
+    )
     message["To"] = os.environ["ALERT_EMAIL_TO"]
     message.set_content(
         "Flipkart's listing may be back in stock!\n\n"
@@ -80,19 +99,24 @@ def main():
     STATE.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        previous = json.loads(STATE.read_text()).get("status")
+        previous = json.loads(
+            STATE.read_text(encoding="utf-8")
+        ).get("status")
     except (FileNotFoundError, json.JSONDecodeError, OSError):
         previous = None
 
     current = check_stock()
-    print("Flipkart listing status:", current)
+    print("Final listing status:", current)
 
     if current == "UNKNOWN":
-        print("Could not confirm stock; no alert sent.")
+        print("No alert sent because stock could not be confirmed.")
         return
 
     if current == "OUT_OF_STOCK":
-        STATE.write_text(json.dumps({"status": current}))
+        STATE.write_text(
+            json.dumps({"status": current}),
+            encoding="utf-8",
+        )
         print("Listing reports out of stock.")
         return
 
@@ -101,12 +125,15 @@ def main():
         return
 
     required = [
-        "SMTP_HOST", "SMTP_USERNAME",
-        "SMTP_PASSWORD", "ALERT_EMAIL_TO",
+        "SMTP_HOST",
+        "SMTP_USERNAME",
+        "SMTP_PASSWORD",
+        "ALERT_EMAIL_TO",
     ]
+
     if not all(os.environ.get(key) for key in required):
-        print("Stock may be available, but email setup is incomplete.")
-        print("No email sent; previous state retained.")
+        print("Email setup incomplete; no email sent.")
+        print("Previous state retained so a later run can retry.")
         return
 
     try:
@@ -116,8 +143,11 @@ def main():
         print("Previous state retained so a later run can retry.")
         return
 
-    STATE.write_text(json.dumps({"status": "IN_STOCK"}))
-    print("Restock email sent. Verify your PIN code before purchasing.")
+    STATE.write_text(
+        json.dumps({"status": "IN_STOCK"}),
+        encoding="utf-8",
+    )
+    print("Restock email sent. Verify delivery before purchasing.")
 
 
 if __name__ == "__main__":
