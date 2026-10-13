@@ -41,8 +41,10 @@ def check_stock():
     print("Page length:", len(html))
     print("Product ID found:", PRODUCT_ID in html)
     print("Listing ID found:", LISTING_ID in html)
-
-    if PRODUCT_ID not in html or LISTING_ID not in html:
+    print("availabilityStatus occurrences:", html.count('"availabilityStatus"'))
+    print("IN_STOCK occurrences:", html.count("IN_STOCK"))
+    print("OUT_OF_STOCK occurrences:", html.count("OUT_OF_STOCK"))
+    if PRODUCT_ID not in html:
         print("The expected product listing could not be verified.")
         return "UNKNOWN"
 
