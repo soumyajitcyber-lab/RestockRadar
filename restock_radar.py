@@ -68,12 +68,34 @@ def check_stock():
         print("Flipkart availability request failed.")
         return "UNKNOWN"
 
+    
     try:
         data = response.json()
     except ValueError:
         print("Flipkart did not return valid JSON.")
         print("Response preview:", response.text[:250])
         return "UNKNOWN"
+
+    print(
+        "Flipkart API STATUS_CODE:",
+        data.get("STATUS_CODE")
+        if isinstance(data, dict) else "not-a-dict"
+    )
+
+    api_response = (
+        data.get("RESPONSE")
+        if isinstance(data, dict) else None
+    )
+
+    print("RESPONSE type:", type(api_response).__name__)
+
+    if isinstance(api_response, dict):
+        print("RESPONSE keys:", list(api_response.keys())[:30])
+    elif isinstance(api_response, list):
+        print("RESPONSE list length:", len(api_response))
+        if api_response and isinstance(api_response[0], dict):
+            print("First RESPONSE item keys:", list(api_response[0].keys())[:30])
+
 
     def find_status(item):
         if isinstance(item, dict):
