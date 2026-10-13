@@ -63,7 +63,35 @@ def check_stock():
 
     if status not in {"IN_STOCK", "OUT_OF_STOCK"}:
         print("Unrecognized stock status.")
+
+    matches = re.finditer(re.escape(LISTING_ID), html)
+    status = None
+
+    for listing in matches:
+        start = max(0, listing.start() - 1500)
+        end = min(len(html), listing.end() + 5000)
+        section = html[start:end]
+
+        found = re.search(
+            r'"availabilityStatus"\s*:\s*"([^"]+)"',
+            section,
+            re.IGNORECASE,
+        )
+
+        if found:
+            status = found.group(1).upper()
+            break
+
+    if status is None:
+        print("Stock-status field not found near any listing occurrence.")
         return "UNKNOWN"
+
+    print("Raw listing status:", status)
+
+    if status not in {"IN_STOCK", "OUT_OF_STOCK"}:
+        print("Unrecognized stock status.")
+        return "UNKNOWN"
+
 
     return status
 
