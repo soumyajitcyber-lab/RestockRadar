@@ -20,11 +20,42 @@ LISTING_ID = "LSTBOK9788168888883HDARHM"
 STATE = Path(".state/status.json")
 
 
+
 def check_stock():
+    api_url = "https://1.rome.api.flipkart.com/api/4/page/fetch"
+
+    page_uri = (
+        "/next-toppers-combo-3-books-"
+        "cbse-sample-paper-class-10-science-mathematics-standard-"
+        "social-science-2026-27/p/itmac61d4e4f7647"
+        "?pid=9788168888883"
+    )
+
+    user_agent = (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/126.0.0.0 Safari/537.36"
+    )
+
+    headers = {
+        "User-Agent": user_agent,
+        "X-User-Agent": user_agent + " FKUA/website/42/website/Desktop",
+        "Origin": "https://www.flipkart.com",
+        "Referer": "https://www.flipkart.com/",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+
+    payload = {
+        "pageUri": page_uri,
+        "locationContext": {"pincode": "110001"},
+    }
+
     try:
-        response = requests.get(
-            URL,
-            headers={"User-Agent": "RestockRadar/1.0"},
+        response = requests.post(
+            api_url,
+            headers=headers,
+            json=payload,
             timeout=20,
         )
     except requests.RequestException as error:
@@ -34,70 +65,53 @@ def check_stock():
     print("HTTP status:", response.status_code)
 
     if response.status_code != 200:
-        print("The website did not return a usable page.")
+        print("Flipkart availability request failed.")
         return "UNKNOWN"
 
-    html = response.text
-    print("Page length:", len(html))
-    print("Product ID found:", PRODUCT_ID in html)
-    print("Listing ID found:", LISTING_ID in html)
-    print("availabilityStatus occurrences:", html.count('"availabilityStatus"'))
-    print("IN_STOCK occurrences:", html.count("IN_STOCK"))
-    print("OUT_OF_STOCK occurrences:", html.count("OUT_OF_STOCK"))
-    if PRODUCT_ID not in html:
-        print("The expected product listing could not be verified.")
+    try:
+        data = response.json()
+    except ValueError:
+        print("Flipkart did not return valid JSON.")
+        print("Response preview:", response.text[:250])
         return "UNKNOWN"
 
-    position = html.find(LISTING_ID)
-    section = html[position:position + 5000]
+    def find_status(item):
+        if isinstance(item, dict):
+            for key, value in item.items():
+                if key.lower() == "availabilitystatus":
+                    if isinstance(value, str):
+                        status_value = value.upper()
+                        if status_value in {
+                            "IN_STOCK",
+                            "OUT_OF_STOCK",
+                        }:
+                            return status_value
 
-    match = re.search(
-        r'"availabilityStatus"\s*:\s*"([^"]+)"',
-        section,
-    )
+            for value in item.values():
+                result = find_status(value)
+                if result:
+                    return result
 
-    if not match:
-        print("Stock-status field not found beside the listing.")
-        return "UNKNOWN"
+        elif isinstance(item, list):
+            for value in item:
+                result = find_status(value)
+                if result:
+                    return result
 
-    status = match.group(1).upper()
-    print("Raw listing status:", status)
+        return None
 
-    if status not in {"IN_STOCK", "OUT_OF_STOCK"}:
-        print("Unrecognized stock status.")
-
-    matches = re.finditer(re.escape(LISTING_ID), html)
-    status = None
-
-    for listing in matches:
-        start = max(0, listing.start() - 1500)
-        end = min(len(html), listing.end() + 5000)
-        section = html[start:end]
-
-        found = re.search(
-            r'"availabilityStatus"\s*:\s*"([^"]+)"',
-            section,
-            re.IGNORECASE,
-        )
-
-        if found:
-            status = found.group(1).upper()
-            break
+    status = find_status(data)
+    print("National availability status:", status or "UNKNOWN")
 
     if status is None:
-        print("Stock-status field not found near any listing occurrence.")
+        print("Could not confirm national stock status.")
+        print(
+            "Response keys:",
+            list(data.keys()) if isinstance(data, dict) else type(data).__name__,
+        )
         return "UNKNOWN"
-
-    print("Raw listing status:", status)
-
-    if status not in {"IN_STOCK", "OUT_OF_STOCK"}:
-        print("Unrecognized stock status.")
-        return "UNKNOWN"
-
 
     return status
-
-
 def send_email():
     message = EmailMessage()
     message["Subject"] = "Restock Radar: Check your sample papers"
